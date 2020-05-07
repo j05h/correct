@@ -22,14 +22,12 @@ class AutoCorrect
     end
   end
 
-  # Given a word, determine the top 10 corrections from our corpus.
+  # Given a word, determine the top 10 corrections
   def corrections(word)
-    words = candidates(word)
-    puts "Found #{words.length} candidates"
-    words.max_by(10) { |candidate| prob(candidate) }
+    candidates(word).max_by(10) do |candidate|
+      probability(candidate)
+    end
   end
-
-  private
 
   # Determine the total number of words from the corpus
   def total_count
@@ -37,9 +35,15 @@ class AutoCorrect
   end
 
   # the probability of a word in the overall list
-  def prob(word)
+  def probability(word)
     (dictionary[word] || 0) / total_count
   end
+
+  def debug(msg)
+    STDERR << "\033[31m" + msg + "\033[0m\n" if ENV['DEBUG']
+  end
+
+  private
 
   # Determine the best candidates corrections for a given word
   # 1. The word is already known
@@ -60,6 +64,7 @@ class AutoCorrect
 
   # Given a list of mutations, pick the ones which are known words
   def known(mutated)
+    debug("Checking #{mutated.count} mutations.")
     mutated.select do |word|
       dictionary[word]
     end
@@ -89,22 +94,23 @@ class AutoCorrect
     end
   end
 
-  # replace letters at the boundary
-  # 'foo' would include ['aoo', 'boo', 'fao', 'fbo', ...]
+  # replace letters at the boundary using our character set
+  # `foo` would include ['aoo', 'boo', 'fao', 'fbo', ...]
   def replacements(splits)
     splits.map do |first, second|
       letters.map { |l| [first, l, second[1..]].join }
     end
   end
 
-  # insert letters at the boundary
-  # 'foo' would include ['afoo', 'fboo', 'foco', ...]
+  # insert letters at the boundary using our character set
+  # `foo` would include ['afoo', 'fboo', 'foco', ...]
   def insertions(splits)
     splits.map do |first, second|
       letters.map { |l| [first, l, second].join }
     end
   end
 
+  # the characters in our character set
   def letters
     @letters ||= 'abcdefghijklmnopqrstuvwxyz'.chars
   end
@@ -113,23 +119,27 @@ class AutoCorrect
   def edits(word)
     splits = split_word(word)
 
-    results = deletions(splits)
-    results << transpositions(splits)
-    results << replacements(splits)
-    results << insertions(splits)
+    mutated = deletions(splits)
+    mutated << transpositions(splits)
+    mutated << replacements(splits)
+    mutated << insertions(splits)
 
-    results.flatten.uniq.compact
+    mutated.flatten.uniq.compact
   end
 
   # perform edits to a word....TWICE
   # this will account for cases where the user fat fingers more than one letter.
   def double_edits(word)
-    edits = edits(word)
-    [edits, edits.map { |w| edits(w) }].flatten.uniq.compact
+    mutated = edits(word)
+    [mutated, mutated.map { |w| edits(w) }].flatten.uniq
   end
 end
 
 word = ARGV.shift
 a = AutoCorrect.new 'big.txt'
 puts "Corrections for #{word}"
-puts a.corrections(word)
+
+a.corrections(word).each_with_index do |correction, index|
+  puts "  #{index}. #{correction}"
+  a.debug("  Probability: #{a.probability(correction)}")
+end
